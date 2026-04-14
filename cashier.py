@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 import json
 import os
+import sys
 import ctypes
 from datetime import datetime
 
@@ -14,6 +15,17 @@ try:
     ctypes.windll.shcore.SetProcessDpiAwareness(1)
 except Exception:
     pass
+
+
+def _get_app_dir():
+    """获取程序所在目录（兼容 PyInstaller --onefile 打包）"""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    else:
+        return os.path.dirname(os.path.abspath(__file__))
+
+
+APP_DIR = _get_app_dir()
 
 # ============ 全局样式常量 ============
 FONT_FAMILY = "Microsoft YaHei UI"
@@ -792,7 +804,7 @@ class CashierApp:
             for price in self.data[cat]:
                 save_obj["data"][cat][str(price)] = self.data[cat][price]
         try:
-            fp = os.path.join(os.path.dirname(os.path.abspath(__file__)), DATA_FILE)
+            fp = os.path.join(APP_DIR, DATA_FILE)
             with open(fp, "w", encoding="utf-8") as f:
                 json.dump(save_obj, f, ensure_ascii=False, indent=2)
         except Exception:
@@ -800,7 +812,7 @@ class CashierApp:
 
     def _load_data(self):
         try:
-            fp = os.path.join(os.path.dirname(os.path.abspath(__file__)), DATA_FILE)
+            fp = os.path.join(APP_DIR, DATA_FILE)
             if not os.path.exists(fp):
                 return
             with open(fp, "r", encoding="utf-8") as f:
@@ -843,7 +855,7 @@ class CashierApp:
     def _export_report(self):
         now = datetime.now()
         filename = f"交班报表_{now.strftime('%Y%m%d_%H%M%S')}.txt"
-        filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), filename)
+        filepath = os.path.join(APP_DIR, filename)
 
         lines = [
             "=" * 50,
