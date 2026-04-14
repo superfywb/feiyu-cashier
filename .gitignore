@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Data files (runtime generated)
+cashier_data.json
+
+# Reports
+交班报表_*.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
