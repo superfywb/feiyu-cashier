@@ -268,7 +268,7 @@ class CashierApp:
         for idx, (item_name, price) in enumerate(items):
             bg = BG_CARD if idx % 2 == 0 else "#F8F9FA"
 
-            display_text = f"{item_name} {price}元"
+            display_text = item_name if item_name.endswith("元") else f"{item_name} {price}元"
             tk.Label(body, text=display_text,
                      font=(FONT_FAMILY, 11, "bold"), width=12,
                      bg=bg, fg=color, anchor=tk.CENTER).grid(
