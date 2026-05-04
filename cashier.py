@@ -148,8 +148,8 @@ class CashierApp:
     def __init__(self, root):
         self.root = root
         self.root.title("飞宇网吧收银交班管理系统")
-        self.root.geometry("1080x780")
-        self.root.minsize(960, 680)
+        self.root.geometry("1080x1080")
+        self.root.minsize(1080, 900)
         self.root.configure(bg=BG_MAIN)
 
         _configure_styles()
@@ -167,6 +167,21 @@ class CashierApp:
         self.grand_total_var = tk.StringVar(value="0.00")
         self.grand_sold_count_var = tk.StringVar(value="0")
         self.mode = "setup"
+
+        # 交班核算相关变量
+        self.settle_reserve_var = tk.StringVar(value="500")
+        self.settle_net_income_var = tk.StringVar(value="0")
+        self.settle_goods_var = tk.StringVar(value="0.00")
+        self.settle_wechat_var = tk.StringVar(value="0")
+        self.settle_alipay_var = tk.StringVar(value="0")
+        self.settle_actual_cash_var = tk.StringVar(value="0")
+        self.settle_other_items = []  # [{"note": str, "amount": float}]
+        self.settle_other_note_var = tk.StringVar(value="")
+        self.settle_other_amount_var = tk.StringVar(value="")
+        self.settle_other_total_var = tk.StringVar(value="0.00")
+        self.settle_theory_var = tk.StringVar(value="--")
+        self.settle_diff_var = tk.StringVar(value="--")
+        self.settle_diff_status_var = tk.StringVar(value="")
 
         self._build_ui()
         self._load_data()
@@ -245,6 +260,7 @@ class CashierApp:
             self._build_category_tab(tab, cat_name, items)
 
         self._build_log_tab()
+        self._build_settlement_tab()
         self._build_overnight_tab()
 
     # -------------------- 商品分类标签页 --------------------
@@ -390,6 +406,330 @@ class CashierApp:
 
         self.log_tree.tag_configure("sell", foreground=COLOR_SUCCESS)
         self.log_tree.tag_configure("undo", foreground=COLOR_DANGER)
+
+    # -------------------- 交班核算标签页 --------------------
+    def _build_settlement_tab(self):
+        tab = tk.Frame(self.notebook, bg=BG_CARD)
+        self.notebook.add(tab, text="  交班核算  ")
+
+        # 标题栏
+        title_bar = tk.Frame(tab, bg=BG_HEADER, height=44)
+        title_bar.pack(fill=tk.X, padx=12, pady=(12, 0))
+        title_bar.pack_propagate(False)
+        tk.Label(title_bar, text="交班核算",
+                 font=(FONT_FAMILY, 14, "bold"),
+                 fg="white", bg=BG_HEADER).pack(side=tk.LEFT, padx=16)
+
+        # 左右布局
+        body = tk.Frame(tab, bg=BG_CARD)
+        body.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
+        left = tk.Frame(body, bg=BG_CARD)
+        left.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 6))
+        right = tk.Frame(body, bg=BG_CARD)
+        right.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(6, 0))
+
+        # ===== 左侧上方: 基础金额 =====
+        base_f = tk.LabelFrame(left, text="  基础金额  ",
+                                font=(FONT_FAMILY, 11, "bold"),
+                                fg=COLOR_PRIMARY, bg=BG_CARD, padx=14, pady=10)
+        base_f.pack(fill=tk.X, pady=(0, 8))
+
+        entry_font = (FONT_FAMILY, 12)
+        label_font = (FONT_FAMILY, 11)
+
+        fields = [
+            ("备用金 :", self.settle_reserve_var),
+            ("本班网费收入 :", self.settle_net_income_var),
+            ("商品销售金额 :", self.settle_goods_var),
+            ("微信收款 :", self.settle_wechat_var),
+            ("支付宝收款 :", self.settle_alipay_var),
+            ("实际现金总额 :", self.settle_actual_cash_var),
+        ]
+        for i, (label_text, var) in enumerate(fields):
+            tk.Label(base_f, text=label_text, font=label_font,
+                     bg=BG_CARD, fg=COLOR_TEXT, anchor="e", width=14).grid(
+                row=i, column=0, padx=(0, 8), pady=5, sticky="e")
+            e = tk.Entry(base_f, textvariable=var,
+                         font=entry_font, width=14,
+                         justify=tk.CENTER, relief=tk.SOLID, bd=1)
+            e.grid(row=i, column=1, padx=0, pady=5)
+            tk.Label(base_f, text="元", font=label_font,
+                     bg=BG_CARD, fg=COLOR_MUTED).grid(
+                row=i, column=2, padx=(4, 0), pady=5, sticky="w")
+            # 商品销售行加"同步"按钮
+            if var is self.settle_goods_var:
+                self.settle_goods_entry = e
+                ttk.Button(base_f, text=" 同步 ",
+                          style="BlueSm.TButton", cursor="hand2",
+                          command=self._settle_sync_goods).grid(
+                    row=i, column=3, padx=(8, 0), pady=5)
+
+        # ===== 左侧下方: 其他收支 =====
+        other_f = tk.LabelFrame(left, text="  其他收支  ",
+                                 font=(FONT_FAMILY, 11, "bold"),
+                                 fg=COLOR_ACCENT, bg=BG_CARD, padx=14, pady=10)
+        other_f.pack(fill=tk.BOTH, expand=True, pady=(0, 8))
+
+        # 输入行
+        input_row = tk.Frame(other_f, bg=BG_CARD)
+        input_row.pack(fill=tk.X, pady=(0, 6))
+        tk.Label(input_row, text="备注:", font=(FONT_FAMILY, 10),
+                 bg=BG_CARD, fg=COLOR_TEXT).pack(side=tk.LEFT)
+        tk.Entry(input_row, textvariable=self.settle_other_note_var,
+                 font=(FONT_FAMILY, 10), width=12,
+                 relief=tk.SOLID, bd=1).pack(side=tk.LEFT, padx=(4, 8))
+        tk.Label(input_row, text="金额:", font=(FONT_FAMILY, 10),
+                 bg=BG_CARD, fg=COLOR_TEXT).pack(side=tk.LEFT)
+        tk.Entry(input_row, textvariable=self.settle_other_amount_var,
+                 font=(FONT_FAMILY, 10), width=8,
+                 justify=tk.CENTER, relief=tk.SOLID, bd=1).pack(side=tk.LEFT, padx=(4, 8))
+        ttk.Button(input_row, text=" 添加 ",
+                  style="Green.TButton", cursor="hand2",
+                  command=self._settle_add_other).pack(side=tk.LEFT, padx=4)
+
+        # Treeview 明细列表
+        tree_frame = tk.Frame(other_f, bg=BG_CARD)
+        tree_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 6))
+
+        columns = ("seq", "note", "amount")
+        self.settle_other_tree = ttk.Treeview(tree_frame, columns=columns,
+                                               show="headings", height=5)
+        self.settle_other_tree.heading("seq", text="序号")
+        self.settle_other_tree.heading("note", text="备注")
+        self.settle_other_tree.heading("amount", text="金额(元)")
+        self.settle_other_tree.column("seq", width=50, anchor=tk.CENTER)
+        self.settle_other_tree.column("note", width=180, anchor=tk.CENTER)
+        self.settle_other_tree.column("amount", width=100, anchor=tk.CENTER)
+
+        sb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL,
+                           command=self.settle_other_tree.yview)
+        self.settle_other_tree.configure(yscrollcommand=sb.set)
+        self.settle_other_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self.settle_other_tree.tag_configure("income", foreground=COLOR_SUCCESS)
+        self.settle_other_tree.tag_configure("expense", foreground=COLOR_DANGER)
+
+        # 底部操作行
+        bottom_row = tk.Frame(other_f, bg=BG_CARD)
+        bottom_row.pack(fill=tk.X)
+        ttk.Button(bottom_row, text=" 删除选中 ",
+                  style="Red.TButton", cursor="hand2",
+                  command=self._settle_remove_other).pack(side=tk.LEFT, padx=(0, 16))
+        tk.Label(bottom_row, text="其他收支合计 :", font=(FONT_FAMILY, 10, "bold"),
+                 bg=BG_CARD, fg=COLOR_TEXT).pack(side=tk.LEFT)
+        tk.Label(bottom_row, textvariable=self.settle_other_total_var,
+                 font=(FONT_FAMILY, 11, "bold"),
+                 bg=BG_CARD, fg=COLOR_ACCENT).pack(side=tk.LEFT, padx=(4, 0))
+        tk.Label(bottom_row, text="元", font=(FONT_FAMILY, 10),
+                 bg=BG_CARD, fg=COLOR_MUTED).pack(side=tk.LEFT, padx=(4, 0))
+
+        # ===== 右侧: 结算结果 =====
+        res_f = tk.Frame(right, bg="#F8F9FA", bd=1, relief=tk.SOLID)
+        res_f.pack(fill=tk.BOTH, expand=True)
+
+        res_header = tk.Frame(res_f, bg=BG_HEADER, height=40)
+        res_header.pack(fill=tk.X)
+        res_header.pack_propagate(False)
+        tk.Label(res_header, text="  结算结果",
+                 font=(FONT_FAMILY, 12, "bold"),
+                 fg="white", bg=BG_HEADER).pack(side=tk.LEFT, padx=8)
+
+        res_body = tk.Frame(res_f, bg="#F8F9FA", padx=20, pady=12)
+        res_body.pack(fill=tk.BOTH, expand=True)
+
+        # 公式说明
+        tk.Label(res_body,
+                 text="理论现金 = 备用金 + 网费 + 商品销售 + 其他收支 - 微信 - 支付宝",
+                 font=(FONT_FAMILY, 8), bg="#F8F9FA", fg=COLOR_MUTED,
+                 wraplength=350, justify=tk.LEFT).pack(anchor="w", pady=(0, 8))
+
+        # 汇总项展示
+        self.settle_summary_labels = {}
+        summary_items = [
+            ("reserve", "备用金", COLOR_TEXT),
+            ("net_income", "本班网费收入", COLOR_PRIMARY),
+            ("goods", "商品销售金额", COLOR_SUCCESS),
+            ("other_total", "其他收支合计", COLOR_ACCENT),
+            ("wechat", "微信收款 (扣除)", COLOR_MUTED),
+            ("alipay", "支付宝收款 (扣除)", COLOR_MUTED),
+        ]
+        for key, title, color in summary_items:
+            row = tk.Frame(res_body, bg="#F8F9FA")
+            row.pack(fill=tk.X, pady=2)
+            tk.Label(row, text=title, font=(FONT_FAMILY, 10),
+                     bg="#F8F9FA", fg=COLOR_MUTED, width=18, anchor="w").pack(side=tk.LEFT)
+            lbl = tk.Label(row, text="--",
+                           font=(FONT_FAMILY, 11, "bold"),
+                           bg="#F8F9FA", fg=color)
+            lbl.pack(side=tk.LEFT)
+            self.settle_summary_labels[key] = lbl
+
+        # 分隔线
+        tk.Frame(res_body, height=2, bg="#DFE6E9").pack(fill=tk.X, pady=8)
+
+        # 理论现金
+        tk.Label(res_body, text="理论现金",
+                 font=(FONT_FAMILY, 11, "bold"),
+                 bg="#F8F9FA", fg=COLOR_TEXT).pack(anchor="w", pady=(4, 2))
+        tk.Label(res_body, textvariable=self.settle_theory_var,
+                 font=(FONT_FAMILY, 16, "bold"),
+                 bg="#F8F9FA", fg=COLOR_PRIMARY).pack(anchor="w", pady=(0, 4))
+
+        # 实际现金
+        tk.Label(res_body, text="实际现金",
+                 font=(FONT_FAMILY, 11, "bold"),
+                 bg="#F8F9FA", fg=COLOR_TEXT).pack(anchor="w", pady=(4, 2))
+        self.settle_actual_display_label = tk.Label(
+            res_body, text="--",
+            font=(FONT_FAMILY, 16, "bold"),
+            bg="#F8F9FA", fg=COLOR_TEXT)
+        self.settle_actual_display_label.pack(anchor="w", pady=(0, 4))
+
+        # 粗分隔线
+        tk.Frame(res_body, height=3, bg=BG_HEADER).pack(fill=tk.X, pady=8)
+
+        # 差额
+        tk.Label(res_body, text="差 额",
+                 font=(FONT_FAMILY, 12, "bold"),
+                 bg="#F8F9FA", fg=COLOR_TEXT).pack(anchor="w", pady=(4, 2))
+        self.settle_diff_label = tk.Label(
+            res_body, textvariable=self.settle_diff_var,
+            font=(FONT_FAMILY, 28, "bold"),
+            bg="#F8F9FA", fg=COLOR_TEXT)
+        self.settle_diff_label.pack(anchor="w", pady=(0, 2))
+        self.settle_status_label = tk.Label(
+            res_body, textvariable=self.settle_diff_status_var,
+            font=(FONT_FAMILY, 12, "bold"),
+            bg="#F8F9FA", fg=COLOR_TEXT)
+        self.settle_status_label.pack(anchor="w", pady=(0, 8))
+
+        # 计算按钮
+        ttk.Button(res_body, text="  计算核算  ",
+                  style="GreenLg.TButton", cursor="hand2",
+                  command=self._settle_calculate).pack(pady=(8, 0))
+
+    # -------------------- 交班核算业务逻辑 --------------------
+    def _settle_sync_goods(self):
+        """从当前售出数据同步商品销售金额"""
+        ga = 0
+        for cat, items in CATEGORIES.items():
+            for item_name, price in items:
+                ga += self.data[cat][item_name]["sold"] * price
+        self.settle_goods_var.set(f"{ga:.2f}")
+
+    def _settle_add_other(self):
+        """添加一条其他收支明细"""
+        note = self.settle_other_note_var.get().strip()
+        amount_str = self.settle_other_amount_var.get().strip()
+        if not note:
+            messagebox.showerror("输入错误", "备注不能为空！")
+            return
+        try:
+            amount = float(amount_str)
+        except (ValueError, TypeError):
+            messagebox.showerror("输入错误", f"金额必须是数字！\n当前输入: \"{amount_str}\"")
+            return
+        self.settle_other_items.append({"note": note, "amount": amount})
+        self.settle_other_note_var.set("")
+        self.settle_other_amount_var.set("")
+        self._settle_refresh_other_list()
+
+    def _settle_remove_other(self):
+        """删除选中的其他收支明细"""
+        selected = self.settle_other_tree.selection()
+        if not selected:
+            return
+        # 获取选中项的索引（从 values 中的序号减 1）
+        indices = []
+        for item_id in selected:
+            vals = self.settle_other_tree.item(item_id, "values")
+            indices.append(int(vals[0]) - 1)
+        for idx in sorted(indices, reverse=True):
+            if 0 <= idx < len(self.settle_other_items):
+                self.settle_other_items.pop(idx)
+        self._settle_refresh_other_list()
+
+    def _settle_refresh_other_list(self):
+        """刷新其他收支 Treeview 和合计"""
+        for item in self.settle_other_tree.get_children():
+            self.settle_other_tree.delete(item)
+        total = 0.0
+        for i, entry in enumerate(self.settle_other_items):
+            amount = entry["amount"]
+            total += amount
+            tag = "income" if amount >= 0 else "expense"
+            display_amount = f"+{amount:.2f}" if amount >= 0 else f"{amount:.2f}"
+            self.settle_other_tree.insert("", "end", values=(
+                i + 1, entry["note"], display_amount
+            ), tags=(tag,))
+        self.settle_other_total_var.set(f"{total:.2f}")
+
+    def _settle_calculate(self):
+        """核心计算：理论现金 vs 实际现金"""
+        def _parse(var, name):
+            s = var.get().strip()
+            try:
+                return float(s)
+            except (ValueError, TypeError):
+                messagebox.showerror("输入错误", f"【{name}】必须是数字！\n当前输入: \"{s}\"")
+                return None
+
+        reserve = _parse(self.settle_reserve_var, "备用金")
+        if reserve is None:
+            return
+        net_income = _parse(self.settle_net_income_var, "本班网费收入")
+        if net_income is None:
+            return
+        goods = _parse(self.settle_goods_var, "商品销售金额")
+        if goods is None:
+            return
+        wechat = _parse(self.settle_wechat_var, "微信收款")
+        if wechat is None:
+            return
+        alipay = _parse(self.settle_alipay_var, "支付宝收款")
+        if alipay is None:
+            return
+        actual = _parse(self.settle_actual_cash_var, "实际现金总额")
+        if actual is None:
+            return
+
+        other_total = sum(item["amount"] for item in self.settle_other_items)
+
+        # 理论现金 = 备用金 + 网费 + 商品销售 + 其他收支 - 微信 - 支付宝
+        theory = reserve + net_income + goods + other_total - wechat - alipay
+        diff = actual - theory
+
+        # 更新右侧汇总数字
+        self.settle_summary_labels["reserve"].config(text=f"{reserve:.2f} 元")
+        self.settle_summary_labels["net_income"].config(text=f"{net_income:.2f} 元")
+        self.settle_summary_labels["goods"].config(text=f"{goods:.2f} 元")
+        other_disp = f"+{other_total:.2f}" if other_total >= 0 else f"{other_total:.2f}"
+        self.settle_summary_labels["other_total"].config(text=f"{other_disp} 元")
+        self.settle_summary_labels["wechat"].config(text=f"-{wechat:.2f} 元")
+        self.settle_summary_labels["alipay"].config(text=f"-{alipay:.2f} 元")
+
+        self.settle_theory_var.set(f"{theory:.2f} 元")
+        self.settle_actual_display_label.config(text=f"{actual:.2f} 元")
+
+        # 差额判定
+        diff_rounded = round(diff, 2)
+        if diff_rounded == 0:
+            color = COLOR_SUCCESS
+            self.settle_diff_var.set("0.00 元")
+            self.settle_diff_status_var.set("账目正确")
+        elif diff_rounded > 0:
+            color = COLOR_PRIMARY
+            self.settle_diff_var.set(f"+{diff_rounded:.2f} 元")
+            self.settle_diff_status_var.set(f"多出 {abs(diff_rounded):.2f} 元")
+        else:
+            color = COLOR_DANGER
+            self.settle_diff_var.set(f"{diff_rounded:.2f} 元")
+            self.settle_diff_status_var.set(f"少了 {abs(diff_rounded):.2f} 元")
+
+        self.settle_diff_label.config(fg=color)
+        self.settle_status_label.config(fg=color)
+        self._save_data()
 
     # -------------------- 包夜计算器标签页 --------------------
     def _build_overnight_tab(self):
@@ -813,6 +1153,15 @@ class CashierApp:
             save_obj["data"][cat] = {}
             for item_name in self.data[cat]:
                 save_obj["data"][cat][item_name] = self.data[cat][item_name]
+        save_obj["settlement"] = {
+            "reserve": self.settle_reserve_var.get(),
+            "net_income": self.settle_net_income_var.get(),
+            "goods": self.settle_goods_var.get(),
+            "wechat": self.settle_wechat_var.get(),
+            "alipay": self.settle_alipay_var.get(),
+            "actual_cash": self.settle_actual_cash_var.get(),
+            "other_items": self.settle_other_items,
+        }
         try:
             fp = os.path.join(APP_DIR, DATA_FILE)
             with open(fp, "w", encoding="utf-8") as f:
@@ -857,6 +1206,18 @@ class CashierApp:
             self.sell_log = save_obj.get("log", [])
             self._refresh_log_display()
             self._refresh_all()
+
+            # 恢复交班核算数据
+            settle = save_obj.get("settlement", {})
+            if settle:
+                self.settle_reserve_var.set(settle.get("reserve", "500"))
+                self.settle_net_income_var.set(settle.get("net_income", "0"))
+                self.settle_goods_var.set(settle.get("goods", "0.00"))
+                self.settle_wechat_var.set(settle.get("wechat", "0"))
+                self.settle_alipay_var.set(settle.get("alipay", "0"))
+                self.settle_actual_cash_var.set(settle.get("actual_cash", "0"))
+                self.settle_other_items = settle.get("other_items", [])
+                self._settle_refresh_other_list()
         except Exception:
             pass
 
@@ -906,6 +1267,45 @@ class CashierApp:
                 lines.append(f"{i+1:>4}  {e['time']:<20}  {act:<6}  {e['cat']:<8}  {item:<8}  {e['price']:>5}元")
             lines.append(f"  共 {len(self.sell_log)} 条操作记录")
             lines.append("=" * 55)
+
+        # 交班核算信息
+        lines.append("")
+        lines.append("--- 交班核算 ---")
+        try:
+            reserve = float(self.settle_reserve_var.get())
+            net_income = float(self.settle_net_income_var.get())
+            goods_amount = float(self.settle_goods_var.get())
+            wechat = float(self.settle_wechat_var.get())
+            alipay = float(self.settle_alipay_var.get())
+            actual_cash = float(self.settle_actual_cash_var.get())
+            other_total = sum(item["amount"] for item in self.settle_other_items)
+            theory = reserve + net_income + goods_amount + other_total - wechat - alipay
+            diff = actual_cash - theory
+
+            lines.append(f"  备用金:          {reserve:.2f} 元")
+            lines.append(f"  本班网费收入:    {net_income:.2f} 元")
+            lines.append(f"  商品销售金额:    {goods_amount:.2f} 元")
+            if self.settle_other_items:
+                lines.append(f"  其他收支明细:")
+                for i, item in enumerate(self.settle_other_items):
+                    sign = "+" if item["amount"] >= 0 else ""
+                    lines.append(f"    {i+1}. {item['note']}  {sign}{item['amount']:.2f} 元")
+            lines.append(f"  其他收支合计:    {other_total:+.2f} 元")
+            lines.append(f"  微信收款:        {wechat:.2f} 元")
+            lines.append(f"  支付宝收款:      {alipay:.2f} 元")
+            lines.append(f"  {'─' * 30}")
+            lines.append(f"  理论现金:        {theory:.2f} 元")
+            lines.append(f"  实际现金:        {actual_cash:.2f} 元")
+            lines.append(f"  差额:            {diff:+.2f} 元")
+            if round(diff, 2) == 0:
+                lines.append(f"  状态: 账目正确")
+            elif diff > 0:
+                lines.append(f"  状态: 多出 {abs(diff):.2f} 元")
+            else:
+                lines.append(f"  状态: 少了 {abs(diff):.2f} 元")
+        except (ValueError, TypeError):
+            lines.append("  (核算数据未填写完整)")
+        lines.append("=" * 55)
 
         try:
             with open(filepath, "w", encoding="utf-8") as f:
