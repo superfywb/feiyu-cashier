@@ -42,11 +42,14 @@ COLOR_ACCENT = "#6C5CE7"   # 紫色/强调
 COLOR_GOLD = "#FDCB6E"     # 金色
 
 # ============ 商品配置 ============
+# 格式：(商品名称, 单价)  名称作为唯一标识
 CATEGORIES = {
-    "饮料": [2, 3, 4, 5, 6],
-    "小零食": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 30, 50, 100],
-    "香烟": [17, 24, 30, 60, 100],
-    "自制饮品": [5, 6, 7],
+    "饮料": [("2元", 2), ("3元", 3), ("4元", 4), ("5元", 5), ("6元", 6)],
+    "小零食": [("1元", 1), ("2元", 2), ("3元", 3), ("4元", 4), ("5元", 5),
+              ("6元", 6), ("7元", 7), ("8元", 8), ("9元", 9), ("10元", 10),
+              ("30元", 30), ("50元", 50), ("100元", 100)],
+    "香烟": [("17元", 17), ("24元", 24), ("30元", 30), ("60元", 60), ("100元", 100)],
+    "自制饮品": [("冰杯", 2), ("咖啡", 5), ("泡茶", 5), ("果汁", 6), ("可乐", 6), ("奶茶", 7)],
 }
 
 CATEGORY_COLORS = {
@@ -131,7 +134,7 @@ def _configure_styles():
 
     # 各商品分类的售出按钮样式
     for cat_name, color in CATEGORY_COLORS.items():
-        sn = "Sell_%s.TButton" % id(cat_name)  # 用唯一 id 做样式名
+        sn = "Sell_%s.TButton" % id(cat_name)
         CATEGORY_SELL_STYLES[cat_name] = sn
         style.configure(sn,
                         font=(FONT_FAMILY, 10, "bold"), foreground="white",
@@ -151,15 +154,15 @@ class CashierApp:
 
         _configure_styles()
 
-        # 数据
+        # 数据：self.data[cat][item_name] = {"initial": 0, "sold": 0, "price": price}
         self.data = {}
-        for cat, prices in CATEGORIES.items():
+        for cat, items in CATEGORIES.items():
             self.data[cat] = {}
-            for price in prices:
-                self.data[cat][price] = {"initial": 0, "sold": 0}
+            for item_name, price in items:
+                self.data[cat][item_name] = {"initial": 0, "sold": 0, "price": price}
 
         self.sell_log = []
-        self.widgets = {}
+        self.widgets = {}          # key: (cat, item_name)
         self.subtotal_labels = {}
         self.grand_total_var = tk.StringVar(value="0.00")
         self.grand_sold_count_var = tk.StringVar(value="0")
@@ -236,22 +239,22 @@ class CashierApp:
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=16, pady=(8, 16))
 
-        for cat_name, prices in CATEGORIES.items():
+        for cat_name, items in CATEGORIES.items():
             tab = tk.Frame(self.notebook, bg=BG_CARD)
-            self.notebook.add(tab, text=f"  {cat_name} ({len(prices)}种)  ")
-            self._build_category_tab(tab, cat_name, prices)
+            self.notebook.add(tab, text=f"  {cat_name} ({len(items)}种)  ")
+            self._build_category_tab(tab, cat_name, items)
 
         self._build_log_tab()
         self._build_overnight_tab()
 
     # -------------------- 商品分类标签页 --------------------
-    def _build_category_tab(self, parent, cat_name, prices):
+    def _build_category_tab(self, parent, cat_name, items):
         color = CATEGORY_COLORS.get(cat_name, "#555")
 
         # 表头
         hdr = tk.Frame(parent, bg="#DFE6E9")
         hdr.pack(fill=tk.X, padx=12, pady=(12, 0))
-        col_defs = [("商品单价", 12), ("初始数量", 10), ("售出数量", 10),
+        col_defs = [("商品名称", 12), ("初始数量", 10), ("售出数量", 10),
                     ("剩余数量", 10), ("销售金额", 13), ("操作", 24)]
         for i, (text, w) in enumerate(col_defs):
             tk.Label(hdr, text=text, font=(FONT_FAMILY, 10, "bold"),
@@ -262,10 +265,11 @@ class CashierApp:
         body = tk.Frame(parent, bg=BG_CARD)
         body.pack(fill=tk.BOTH, expand=True, padx=12)
 
-        for idx, price in enumerate(prices):
+        for idx, (item_name, price) in enumerate(items):
             bg = BG_CARD if idx % 2 == 0 else "#F8F9FA"
 
-            tk.Label(body, text=f"{price} 元",
+            display_text = f"{item_name} {price}元"
+            tk.Label(body, text=display_text,
                      font=(FONT_FAMILY, 11, "bold"), width=12,
                      bg=bg, fg=color, anchor=tk.CENTER).grid(
                 row=idx, column=0, padx=1, pady=1, sticky="ew")
@@ -298,26 +302,26 @@ class CashierApp:
             sell_btn = ttk.Button(
                 btn_cell, text="  售出 +1  ",
                 style=sell_style, cursor="hand2",
-                command=lambda c=cat_name, p=price: self._sell_one(c, p))
+                command=lambda c=cat_name, n=item_name: self._sell_one(c, n))
             sell_btn.pack(side=tk.LEFT, padx=4)
 
             undo_btn = ttk.Button(
                 btn_cell, text=" 撤销 -1 ",
                 style="Gray.TButton", cursor="hand2",
-                command=lambda c=cat_name, p=price: self._undo_one(c, p))
+                command=lambda c=cat_name, n=item_name: self._undo_one(c, n))
             undo_btn.pack(side=tk.LEFT, padx=2)
 
             restock_btn = ttk.Button(
                 btn_cell, text=" 补货 ",
                 style="Orange.TButton", cursor="hand2",
-                command=lambda c=cat_name, p=price: self._restock(c, p))
+                command=lambda c=cat_name, n=item_name: self._restock(c, n))
             restock_btn.pack(side=tk.LEFT, padx=2)
 
             sell_btn.config(state=tk.DISABLED)
             undo_btn.config(state=tk.DISABLED)
             restock_btn.config(state=tk.DISABLED)
 
-            self.widgets[(cat_name, price)] = {
+            self.widgets[(cat_name, item_name)] = {
                 "init_var": init_var, "init_entry": init_entry,
                 "sold_label": sold_label, "remain_label": remain_label,
                 "amount_label": amount_label,
@@ -359,22 +363,24 @@ class CashierApp:
         tree_frame = tk.Frame(log_tab, bg=BG_CARD)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 12))
 
-        columns = ("seq", "time", "action", "category", "price", "running_total")
+        columns = ("seq", "time", "action", "category", "item", "price", "running_total")
         self.log_tree = ttk.Treeview(tree_frame, columns=columns,
                                      show="headings", height=20)
         self.log_tree.heading("seq", text="序号")
         self.log_tree.heading("time", text="时间")
         self.log_tree.heading("action", text="操作")
         self.log_tree.heading("category", text="商品类别")
+        self.log_tree.heading("item", text="商品名称")
         self.log_tree.heading("price", text="单价(元)")
         self.log_tree.heading("running_total", text="累计销售额(元)")
 
-        self.log_tree.column("seq", width=60, anchor=tk.CENTER)
-        self.log_tree.column("time", width=170, anchor=tk.CENTER)
-        self.log_tree.column("action", width=80, anchor=tk.CENTER)
-        self.log_tree.column("category", width=120, anchor=tk.CENTER)
-        self.log_tree.column("price", width=100, anchor=tk.CENTER)
-        self.log_tree.column("running_total", width=140, anchor=tk.CENTER)
+        self.log_tree.column("seq", width=50, anchor=tk.CENTER)
+        self.log_tree.column("time", width=150, anchor=tk.CENTER)
+        self.log_tree.column("action", width=60, anchor=tk.CENTER)
+        self.log_tree.column("category", width=90, anchor=tk.CENTER)
+        self.log_tree.column("item", width=90, anchor=tk.CENTER)
+        self.log_tree.column("price", width=80, anchor=tk.CENTER)
+        self.log_tree.column("running_total", width=120, anchor=tk.CENTER)
 
         sb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL,
                            command=self.log_tree.yview)
@@ -560,17 +566,18 @@ class CashierApp:
 
     # ==================== 业务逻辑 ====================
     def _start_selling(self):
-        for (cat, price), w in self.widgets.items():
+        for (cat, item_name), w in self.widgets.items():
             val = w["init_var"].get().strip()
             if not val.isdigit():
+                price = self.data[cat][item_name]["price"]
                 messagebox.showerror("输入错误",
-                                     f"【{cat}】{price}元 的初始数量必须是非负整数！\n当前输入: \"{val}\"")
+                                     f"【{cat}】{item_name}({price}元) 的初始数量必须是非负整数！\n当前输入: \"{val}\"")
                 return
-            self.data[cat][price]["initial"] = int(val)
-            self.data[cat][price]["sold"] = 0
+            self.data[cat][item_name]["initial"] = int(val)
+            self.data[cat][item_name]["sold"] = 0
 
         self.mode = "selling"
-        for (cat, price), w in self.widgets.items():
+        for (cat, item_name), w in self.widgets.items():
             w["init_entry"].config(state=tk.DISABLED)
             w["sell_btn"].config(state=tk.NORMAL)
             w["undo_btn"].config(state=tk.NORMAL)
@@ -588,13 +595,13 @@ class CashierApp:
         if not messagebox.askyesno("确认", "重新设置将清除当前所有售出记录，确定吗？"):
             return
         self.mode = "setup"
-        for (cat, price), w in self.widgets.items():
+        for (cat, item_name), w in self.widgets.items():
             w["init_entry"].config(state=tk.NORMAL)
             w["sell_btn"].config(state=tk.DISABLED)
             w["undo_btn"].config(state=tk.DISABLED)
             w["restock_btn"].config(state=tk.DISABLED)
-            self.data[cat][price]["sold"] = 0
-            self.data[cat][price]["initial"] = 0
+            self.data[cat][item_name]["sold"] = 0
+            self.data[cat][item_name]["initial"] = 0
             w["init_var"].set("0")
         self.start_btn.config(state=tk.NORMAL)
         self.reset_btn.config(state=tk.DISABLED)
@@ -605,56 +612,58 @@ class CashierApp:
         self._refresh_all()
         self._save_data()
 
-    def _sell_one(self, cat, price):
-        d = self.data[cat][price]
+    def _sell_one(self, cat, item_name):
+        d = self.data[cat][item_name]
+        price = d["price"]
         if d["sold"] >= d["initial"]:
             messagebox.showwarning("库存不足",
-                                   f"【{cat}】{price}元 商品已全部售出（初始{d['initial']}件）！\n"
-                                   f"如需补货请先 \"重新设置\"。")
+                                   f"【{cat}】{item_name}({price}元) 已全部售出（初始{d['initial']}件）！\n"
+                                   f"如需补货请点击 \"补货\" 按钮。")
             return
         d["sold"] += 1
-        self._add_log_entry(cat, price, "sell")
-        self._refresh_item(cat, price)
+        self._add_log_entry(cat, item_name, price, "sell")
+        self._refresh_item(cat, item_name)
         self._refresh_subtotal(cat)
         self._refresh_grand_total()
         self._save_data()
 
-        btn = self.widgets[(cat, price)]["sell_btn"]
+        btn = self.widgets[(cat, item_name)]["sell_btn"]
         original_style = CATEGORY_SELL_STYLES.get(cat, "Green.TButton")
         btn.configure(style="Gold.TButton")
         self.root.after(150, lambda: btn.configure(style=original_style))
 
-    def _undo_one(self, cat, price):
-        d = self.data[cat][price]
+    def _undo_one(self, cat, item_name):
+        d = self.data[cat][item_name]
         if d["sold"] <= 0:
             return
         d["sold"] -= 1
-        self._add_log_entry(cat, price, "undo")
-        self._refresh_item(cat, price)
+        self._add_log_entry(cat, item_name, d["price"], "undo")
+        self._refresh_item(cat, item_name)
         self._refresh_subtotal(cat)
         self._refresh_grand_total()
         self._save_data()
 
-    def _restock(self, cat, price):
+    def _restock(self, cat, item_name):
         """补货：增加商品初始数量"""
+        price = self.data[cat][item_name]["price"]
         qty = simpledialog.askinteger(
-            "补货", f"【{cat}】{price}元 商品补货数量：",
+            "补货", f"【{cat}】{item_name}({price}元) 补货数量：",
             minvalue=1, maxvalue=9999, parent=self.root)
         if qty is None:
             return
-        self.data[cat][price]["initial"] += qty
-        self.widgets[(cat, price)]["init_var"].set(
-            str(self.data[cat][price]["initial"]))
-        self._refresh_item(cat, price)
+        self.data[cat][item_name]["initial"] += qty
+        self.widgets[(cat, item_name)]["init_var"].set(
+            str(self.data[cat][item_name]["initial"]))
+        self._refresh_item(cat, item_name)
         self._refresh_subtotal(cat)
         self._refresh_grand_total()
         self._save_data()
 
     # ==================== 售出记录日志 ====================
-    def _add_log_entry(self, cat, price, action):
+    def _add_log_entry(self, cat, item_name, price, action):
         self.sell_log.append({
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "cat": cat, "price": price, "action": action,
+            "cat": cat, "item": item_name, "price": price, "action": action,
         })
         self._refresh_log_display()
 
@@ -672,7 +681,8 @@ class CashierApp:
             self.log_tree.insert("", "end", values=(
                 i + 1, e["time"],
                 "售出" if e["action"] == "sell" else "撤销",
-                e["cat"], f"{e['price']} 元", f"{running_list[i]:.2f}",
+                e["cat"], e.get("item", ""),
+                f"{e['price']} 元", f"{running_list[i]:.2f}",
             ), tags=(e["action"],))
         self.log_count_var.set(f"共 {total} 条记录")
 
@@ -760,10 +770,10 @@ class CashierApp:
                 lbl.config(bg=bg, fg=fg)
 
     # ==================== UI 刷新 ====================
-    def _refresh_item(self, cat, price):
-        d = self.data[cat][price]
-        w = self.widgets[(cat, price)]
-        sold, initial = d["sold"], d["initial"]
+    def _refresh_item(self, cat, item_name):
+        d = self.data[cat][item_name]
+        w = self.widgets[(cat, item_name)]
+        sold, initial, price = d["sold"], d["initial"], d["price"]
         remain = initial - sold
         w["sold_label"].config(text=str(sold))
         w["remain_label"].config(text=str(remain))
@@ -772,27 +782,27 @@ class CashierApp:
 
     def _refresh_subtotal(self, cat):
         tc = ta = 0
-        for p in CATEGORIES[cat]:
-            d = self.data[cat][p]
+        for item_name, price in CATEGORIES[cat]:
+            d = self.data[cat][item_name]
             tc += d["sold"]
-            ta += d["sold"] * p
+            ta += d["sold"] * price
         self.subtotal_labels[cat]["count"].config(text=f"售出 {tc} 件")
         self.subtotal_labels[cat]["amount"].config(text=f"金额 : {ta:.2f} 元")
 
     def _refresh_grand_total(self):
         ga = gc = 0
-        for cat, prices in CATEGORIES.items():
-            for p in prices:
-                d = self.data[cat][p]
+        for cat, items in CATEGORIES.items():
+            for item_name, price in items:
+                d = self.data[cat][item_name]
                 gc += d["sold"]
-                ga += d["sold"] * p
+                ga += d["sold"] * price
         self.grand_total_var.set(f"{ga:.2f}")
         self.grand_sold_count_var.set(str(gc))
 
     def _refresh_all(self):
-        for cat, prices in CATEGORIES.items():
-            for p in prices:
-                self._refresh_item(cat, p)
+        for cat, items in CATEGORIES.items():
+            for item_name, price in items:
+                self._refresh_item(cat, item_name)
             self._refresh_subtotal(cat)
         self._refresh_grand_total()
 
@@ -801,8 +811,8 @@ class CashierApp:
         save_obj = {"mode": self.mode, "data": {}, "log": self.sell_log}
         for cat in self.data:
             save_obj["data"][cat] = {}
-            for price in self.data[cat]:
-                save_obj["data"][cat][str(price)] = self.data[cat][price]
+            for item_name in self.data[cat]:
+                save_obj["data"][cat][item_name] = self.data[cat][item_name]
         try:
             fp = os.path.join(APP_DIR, DATA_FILE)
             with open(fp, "w", encoding="utf-8") as f:
@@ -824,18 +834,17 @@ class CashierApp:
             for cat in self.data:
                 if cat not in saved:
                     continue
-                for price in self.data[cat]:
-                    key = str(price)
-                    if key not in saved[cat]:
+                for item_name in self.data[cat]:
+                    if item_name not in saved[cat]:
                         continue
-                    self.data[cat][price]["initial"] = saved[cat][key].get("initial", 0)
-                    self.data[cat][price]["sold"] = saved[cat][key].get("sold", 0)
-                    self.widgets[(cat, price)]["init_var"].set(
-                        str(self.data[cat][price]["initial"]))
+                    self.data[cat][item_name]["initial"] = saved[cat][item_name].get("initial", 0)
+                    self.data[cat][item_name]["sold"] = saved[cat][item_name].get("sold", 0)
+                    self.widgets[(cat, item_name)]["init_var"].set(
+                        str(self.data[cat][item_name]["initial"]))
 
             if mode == "selling":
                 self.mode = "selling"
-                for (cat, price), w in self.widgets.items():
+                for (cat, item_name), w in self.widgets.items():
                     w["init_entry"].config(state=tk.DISABLED)
                     w["sell_btn"].config(state=tk.NORMAL)
                     w["undo_btn"].config(state=tk.NORMAL)
@@ -858,44 +867,45 @@ class CashierApp:
         filepath = os.path.join(APP_DIR, filename)
 
         lines = [
-            "=" * 50,
+            "=" * 55,
             "        飞宇网吧收银交班报表",
-            "=" * 50,
+            "=" * 55,
             f"导出时间: {now.strftime('%Y-%m-%d %H:%M:%S')}", "",
         ]
         grand_count = grand_amount = 0
-        for cat, prices in CATEGORIES.items():
+        for cat, items in CATEGORIES.items():
             lines.append(f"--- {cat} ---")
-            lines.append(f"{'单价':>6}  {'初始':>6}  {'售出':>6}  {'剩余':>6}  {'金额':>10}")
+            lines.append(f"{'商品':>8}  {'单价':>6}  {'初始':>6}  {'售出':>6}  {'剩余':>6}  {'金额':>10}")
             cc = ca = 0
-            for price in prices:
-                d = self.data[cat][price]
+            for item_name, price in items:
+                d = self.data[cat][item_name]
                 sold, initial = d["sold"], d["initial"]
                 remain = initial - sold
                 amount = sold * price
                 cc += sold
                 ca += amount
                 if sold > 0 or initial > 0:
-                    lines.append(f"{price:>5}元  {initial:>6}  {sold:>6}  {remain:>6}  {amount:>9.2f}元")
+                    lines.append(f"{item_name:>8}  {price:>5}元  {initial:>6}  {sold:>6}  {remain:>6}  {amount:>9.2f}元")
             lines.append(f"  小计: 售出 {cc} 件, 金额 {ca:.2f} 元")
             lines.append("")
             grand_count += cc
             grand_amount += ca
 
-        lines.append("=" * 50)
+        lines.append("=" * 55)
         lines.append(f"  总计: 售出 {grand_count} 件")
         lines.append(f"  销售总额: {grand_amount:.2f} 元")
-        lines.append("=" * 50)
+        lines.append("=" * 55)
 
         if self.sell_log:
             lines.append("")
             lines.append("--- 售出记录明细（按时间顺序）---")
-            lines.append(f"{'序号':>4}  {'时间':<20}  {'操作':<6}  {'类别':<8}  {'单价':>6}")
+            lines.append(f"{'序号':>4}  {'时间':<20}  {'操作':<6}  {'类别':<8}  {'商品':<8}  {'单价':>6}")
             for i, e in enumerate(self.sell_log):
                 act = "售出" if e["action"] == "sell" else "撤销"
-                lines.append(f"{i+1:>4}  {e['time']:<20}  {act:<6}  {e['cat']:<8}  {e['price']:>5}元")
+                item = e.get("item", "")
+                lines.append(f"{i+1:>4}  {e['time']:<20}  {act:<6}  {e['cat']:<8}  {item:<8}  {e['price']:>5}元")
             lines.append(f"  共 {len(self.sell_log)} 条操作记录")
-            lines.append("=" * 50)
+            lines.append("=" * 55)
 
         try:
             with open(filepath, "w", encoding="utf-8") as f:
