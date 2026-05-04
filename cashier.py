@@ -950,6 +950,18 @@ class CashierApp:
         self.sell_log.clear()
         self._refresh_log_display()
         self._refresh_all()
+        # 清零交班核算数据
+        self.settle_reserve_var.set("500")
+        self.settle_net_income_var.set("0")
+        self.settle_goods_var.set("0.00")
+        self.settle_wechat_var.set("0")
+        self.settle_alipay_var.set("0")
+        self.settle_actual_cash_var.set("0")
+        self.settle_other_items.clear()
+        self._settle_refresh_other_list()
+        self.settle_theory_var.set("--")
+        self.settle_diff_var.set("--")
+        self.settle_diff_status_var.set("")
         self._save_data()
 
     def _sell_one(self, cat, item_name):
